@@ -1,4 +1,5 @@
 package com.example.odooconectorapp;
+import android.content.Intent;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
@@ -69,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
     private class OdooConnectTask extends AsyncTask<String, Void, Object> {
 
         private Exception exception = null;
+        private String serverUrl, database, user, pass;
 
         @Override
         protected void onPreExecute() {
@@ -79,21 +81,21 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         protected Object doInBackground(String... params) {
-            String urlStr = params[0];
-            String db = params[1];
-            String username = params[2];
-            String password = params[3];
+            serverUrl = params[0];
+            database = params[1];
+            user = params[2];
+            pass = params[3];
 
             try {
                 XmlRpcClientConfigImpl commonConfig = new XmlRpcClientConfigImpl();
                 // El endpoint para autenticación es /xmlrpc/2/common
-                commonConfig.setServerURL(new URL(urlStr + "/xmlrpc/2/common"));
+                commonConfig.setServerURL(new URL(serverUrl + "/xmlrpc/2/common"));
 
                 XmlRpcClient client = new XmlRpcClient();
                 client.setConfig(commonConfig);
 
                 // El método 'authenticate' espera: db, username, password, environment (HashMap vacío)
-                Object[] authParams = new Object[]{db, username, password, Collections.emptyMap()};
+                Object[] authParams = new Object[]{database, user, pass, Collections.emptyMap()};
                 Object result = client.execute("authenticate", authParams);
 
                 // Si la autenticación es exitosa, 'result' será el UID (Integer).
@@ -122,6 +124,17 @@ public class MainActivity extends AppCompatActivity {
                 // Odoo devuelve el UID (un entero) si es exitoso, o 'false' (booleano) si falla.
                 if (result instanceof Integer && (Integer) result > 0) {
                     textViewStatus.setText("Connexió exitosa! UID: " + deserializedResult);
+
+                    // **NUEVA FUNCIONALIDAD**: Abrir CustomerActivity
+                    Intent intent = new Intent(MainActivity.this, CustomerActivity.class);
+                    intent.putExtra("serverUrl", serverUrl);
+                    intent.putExtra("database", database);
+                    intent.putExtra("username", user);
+                    intent.putExtra("password", pass);
+                    intent.putExtra("uid", (Integer) result);
+
+                    startActivity(intent);
+
                 } else {
                     textViewStatus.setText("Error d'autenticació: " + deserializedResult);
                 }
