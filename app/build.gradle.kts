@@ -41,6 +41,7 @@ dependencies {
     implementation(libs.activity)
     implementation(libs.constraintlayout)
 
+    // Dependencias XML-RPC para conectar con Odoo
     implementation("org.apache.xmlrpc:xmlrpc-client:3.1.3")
     implementation("org.apache.xmlrpc:xmlrpc-common:3.1.3")
     implementation("org.apache.ws.commons.util:ws-commons-util:1.0.2") {

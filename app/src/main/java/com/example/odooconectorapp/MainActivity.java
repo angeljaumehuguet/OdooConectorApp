@@ -1,7 +1,8 @@
 package com.example.odooconectorapp;
 import android.content.Intent;
-import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -13,11 +14,9 @@ import org.apache.xmlrpc.client.XmlRpcClient;
 import org.apache.xmlrpc.client.XmlRpcClientConfigImpl;
 
 import java.net.URL;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -26,11 +25,17 @@ public class MainActivity extends AppCompatActivity {
     private TextView textViewStatus;
 
     private static final String TAG = "OdooConnector";
+    private ExecutorService executor;
+    private Handler mainHandler;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        // Inicializar executor y handler
+        executor = Executors.newSingleThreadExecutor();
+        mainHandler = new Handler(Looper.getMainLooper());
 
         // 1. Enlazar los elementos de la UI con las variables
         editTextUrl = findViewById(R.id.editTextUrl);
@@ -40,12 +45,11 @@ public class MainActivity extends AppCompatActivity {
         buttonConnect = findViewById(R.id.buttonConnect);
         textViewStatus = findViewById(R.id.textViewStatus);
 
-        // Pre-llenar campos para pruebas (opcional)
-        // editTextUrl.setText("http://tu_ip_o_dominio:8069");
-        // editTextDb.setText("tu_base_de_datos");
-        // editTextUsername.setText("tu_usuario");
-        // editTextPassword.setText("tu_contraseña");
-
+        // Pre-llenar campos para pruebas con datos de Bitnami
+        editTextUrl.setText("http://192.168.240.192:8069");
+        editTextDb.setText("bitnami_odoo");
+        editTextUsername.setText("user@example.com");
+        editTextPassword.setText("uoRe7JI@URoZ");
 
         // 2. Configurar el OnClickListener para el botón
         buttonConnect.setOnClickListener(new View.OnClickListener() {
@@ -60,93 +64,84 @@ public class MainActivity extends AppCompatActivity {
                     textViewStatus.setText("Si us plau, omple tots els camps.");
                     return;
                 }
-                // Iniciar la tarea asíncrona para la conexión
-                new OdooConnectTask().execute(url, db, username, password);
+
+                // Ejecutar conexión en hilo de fondo
+                connectToOdoo(url, db, username, password);
             }
         });
     }
 
-    // 3. AsyncTask para realizar la conexión en segundo plano
-    private class OdooConnectTask extends AsyncTask<String, Void, Object> {
+    private void connectToOdoo(String serverUrl, String database, String user, String pass) {
+        // Actualizar UI en hilo principal - estado "conectando"
+        textViewStatus.setText("Connectant...");
+        buttonConnect.setEnabled(false);
 
-        private Exception exception = null;
-        private String serverUrl, database, user, pass;
+        // Ejecutar conexión en hilo de fondo
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                Object result = null;
+                Exception exception = null;
 
-        @Override
-        protected void onPreExecute() {
-            super.onPreExecute();
-            textViewStatus.setText("Connectant...");
-            buttonConnect.setEnabled(false); // Deshabilitar botón durante la conexión
-        }
+                try {
+                    XmlRpcClientConfigImpl commonConfig = new XmlRpcClientConfigImpl();
+                    commonConfig.setServerURL(new URL(serverUrl + "/xmlrpc/2/common"));
 
-        @Override
-        protected Object doInBackground(String... params) {
-            serverUrl = params[0];
-            database = params[1];
-            user = params[2];
-            pass = params[3];
+                    XmlRpcClient client = new XmlRpcClient();
+                    client.setConfig(commonConfig);
 
-            try {
-                XmlRpcClientConfigImpl commonConfig = new XmlRpcClientConfigImpl();
-                // El endpoint para autenticación es /xmlrpc/2/common
-                commonConfig.setServerURL(new URL(serverUrl + "/xmlrpc/2/common"));
+                    Object[] authParams = new Object[]{database, user, pass, Collections.emptyMap()};
+                    result = client.execute("authenticate", authParams);
 
-                XmlRpcClient client = new XmlRpcClient();
-                client.setConfig(commonConfig);
-
-                // El método 'authenticate' espera: db, username, password, environment (HashMap vacío)
-                Object[] authParams = new Object[]{database, user, pass, Collections.emptyMap()};
-                Object result = client.execute("authenticate", authParams);
-
-                // Si la autenticación es exitosa, 'result' será el UID (Integer).
-                // Si falla, 'result' podría ser 'false' (Boolean) o lanzar una excepción.
-                return result;
-
-            } catch (Exception e) {
-                this.exception = e;
-                Log.e(TAG, "Error en connexió Odoo: " + e.getMessage(), e);
-                return null;
-            }
-        }
-
-        @Override
-        protected void onPostExecute(Object result) {
-            super.onPostExecute(result);
-            buttonConnect.setEnabled(true); // Habilitar botón de nuevo
-
-            if (exception != null) {
-                textViewStatus.setText("Error de connexió: " + exception.getMessage());
-            } else if (result != null) {
-                // El método deserialize convierte la respuesta a una cadena legible
-                String deserializedResult = deserialize(result);
-
-                // Comprobar si la autenticación fue exitosa
-                // Odoo devuelve el UID (un entero) si es exitoso, o 'false' (booleano) si falla.
-                if (result instanceof Integer && (Integer) result > 0) {
-                    textViewStatus.setText("Connexió exitosa! UID: " + deserializedResult);
-
-                    // **NUEVA FUNCIONALIDAD**: Abrir CustomerActivity
-                    Intent intent = new Intent(MainActivity.this, CustomerActivity.class);
-                    intent.putExtra("serverUrl", serverUrl);
-                    intent.putExtra("database", database);
-                    intent.putExtra("username", user);
-                    intent.putExtra("password", pass);
-                    intent.putExtra("uid", (Integer) result);
-
-                    startActivity(intent);
-
-                } else {
-                    textViewStatus.setText("Error d'autenticació: " + deserializedResult);
+                } catch (Exception e) {
+                    exception = e;
+                    Log.e(TAG, "Error en connexió Odoo: " + e.getMessage(), e);
                 }
-            } else {
-                textViewStatus.setText("Error de connexió: Resposta desconeguda del servidor.");
+
+                // Actualizar UI en hilo principal con el resultado
+                final Object finalResult = result;
+                final Exception finalException = exception;
+
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        buttonConnect.setEnabled(true);
+
+                        if (finalException != null) {
+                            textViewStatus.setText("Error de connexió: " + finalException.getMessage());
+                            Log.e(TAG, "Exception details: ", finalException);
+                        } else if (finalResult != null) {
+                            String deserializedResult = deserialize(finalResult);
+
+                            if (finalResult instanceof Integer && (Integer) finalResult > 0) {
+                                textViewStatus.setText("✅ Connexió exitosa!\nUID: " + deserializedResult +
+                                        "\nUsuari: " + user + "\nBase de dades: " + database);
+
+                                Log.i(TAG, "Connexió exitosa - UID: " + finalResult);
+                                Log.i(TAG, "Servidor: " + serverUrl);
+                                Log.i(TAG, "Database: " + database);
+                                Log.i(TAG, "User: " + user);
+
+                            } else {
+                                textViewStatus.setText("❌ Error d'autenticació: " + deserializedResult);
+                                Log.w(TAG, "Autenticació fallida - Result: " + finalResult);
+                            }
+                        } else {
+                            textViewStatus.setText("❌ Error de connexió: Resposta desconeguda del servidor.");
+                            Log.e(TAG, "Resposta nula del servidor");
+                        }
+                    }
+                });
             }
-        }
+        });
     }
 
     /**
      * Mètode deserialize: converteix la dada rebuda (generalment de l'autenticació d'Odoo)
      * a un String per a la seva visualització o registre.
+     *
+     * Activitat 4 - Aclaració: Aquest mètode converteix qualsevol tipus de dada
+     * (Integer, Boolean, etc.) rebuda de la crida XML-RPC a un String llegible.
      *
      * @param data L'objecte rebut de la trucada XML-RPC (pot ser Integer, Boolean, etc.)
      * @return Una representació en String de la dada.
@@ -155,11 +150,18 @@ public class MainActivity extends AppCompatActivity {
         if (data == null) {
             return "null";
         }
-        // Simplement convertim l'objecte a la seva representació String.
-        // Per a l'autenticació d'Odoo:
-        // - Si és èxit, 'data' és un Integer (el UID).
-        // - Si falla, 'data' pot ser un Boolean (false).
-        // Podries afegir lògica més complexa aquí si la resposta fos una estructura més elaborada.
+
+        Log.d(TAG, "Tipus de dada rebuda: " + data.getClass().getSimpleName());
+        Log.d(TAG, "Valor de la dada: " + data.toString());
+
         return String.valueOf(data);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (executor != null) {
+            executor.shutdown();
+        }
     }
 }
