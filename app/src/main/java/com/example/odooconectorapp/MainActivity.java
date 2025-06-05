@@ -46,7 +46,7 @@ public class MainActivity extends AppCompatActivity {
         textViewStatus = findViewById(R.id.textViewStatus);
 
         // Pre-llenar campos para pruebas con datos de Bitnami
-        editTextUrl.setText("http://192.168.240.192:8069");
+        editTextUrl.setText("http://192.168.240.192");
         editTextDb.setText("bitnami_odoo");
         editTextUsername.setText("user@example.com");
         editTextPassword.setText("uoRe7JI@URoZ");
